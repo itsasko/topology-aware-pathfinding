@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from surfaces import (klein_bottle_point_cloud, crosscap_point_cloud, torus_point_cloud,
                       sphere_point_cloud)
 from heuristic_search import astar, weighted_astar, greedy_bfs
+from ph_enhancement import run_ph_search
 
 def plot_point_cloud(points, title):
     fig = plt.figure()
@@ -95,25 +96,64 @@ path_crosscap_wa = weighted_astar(G_crosscap, crosscap, start, goal, w=2.0)
 path_crosscap_gbfs = greedy_bfs(G_crosscap, crosscap, start, goal)
 
 # Sphere
-visualize_path(sphere, G_sphere, path_a, "A* on Sphere")
-visualize_path(sphere, G_sphere, path_wa, "Weighted A* on Sphere")
-visualize_path(sphere, G_sphere, path_gbfs, "Greedy BFS on Sphere")
+# visualize_path(sphere, G_sphere, path_a, "A* on Sphere")
+# visualize_path(sphere, G_sphere, path_wa, "Weighted A* on Sphere")
+# visualize_path(sphere, G_sphere, path_gbfs, "Greedy BFS on Sphere")
+#
+# # Klein Bottle
+# visualize_path(klein, G_klein, path_klein_a, "A* on Klein Bottle")
+# visualize_path(klein, G_klein, path_klein_wa, "Weighted A* on Klein Bottle")
+# visualize_path(klein, G_klein, path_klein_gbfs, "Greedy BFS on Klein Bottle")
+#
+# # Torus
+# visualize_path(torus, G_torus, path_torus_a, "A* on Torus")
+# visualize_path(torus, G_torus, path_torus_wa, "Weighted A* on Torus")
+# visualize_path(torus, G_torus, path_torus_gbfs, "Greedy BFS on Torus")
+#
+# # Crosscap
+# visualize_path(crosscap, G_crosscap, path_crosscap_a, "A* on Crosscap")
+# visualize_path(crosscap, G_crosscap, path_crosscap_wa, "Weighted A* on Crosscap")
+# visualize_path(crosscap, G_crosscap, path_crosscap_gbfs, "Greedy BFS on Crosscap")
+
+# ----------------------------
+# PH-enhanced searches & visualization for each surface
+# ----------------------------
+
+# Sphere
+path_sphere_astar = run_ph_search(sphere, G_sphere, start, goal, method="astar", alpha=0.1)
+path_sphere_wa = run_ph_search(sphere, G_sphere, start, goal, method="weighted_astar", alpha=0.1, w=2.0)
+path_sphere_gbfs = run_ph_search(sphere, G_sphere, start, goal, method="greedy_bfs", alpha=0.1)
+
+visualize_path(sphere, G_sphere, path_sphere_astar, "PH-A* on Sphere")
+visualize_path(sphere, G_sphere, path_sphere_wa, "PH-Weighted A* on Sphere")
+visualize_path(sphere, G_sphere, path_sphere_gbfs, "PH-Greedy BFS on Sphere")
 
 # Klein Bottle
-visualize_path(klein, G_klein, path_klein_a, "A* on Klein Bottle")
-visualize_path(klein, G_klein, path_klein_wa, "Weighted A* on Klein Bottle")
-visualize_path(klein, G_klein, path_klein_gbfs, "Greedy BFS on Klein Bottle")
+path_klein_astar = run_ph_search(klein, G_klein, start, goal, method="astar", alpha=0.1)
+path_klein_wa = run_ph_search(klein, G_klein, start, goal, method="weighted_astar", alpha=0.1, w=2.0)
+path_klein_gbfs = run_ph_search(klein, G_klein, start, goal, method="greedy_bfs", alpha=0.1)
+
+visualize_path(klein, G_klein, path_klein_astar, "PH-A* on Klein Bottle")
+visualize_path(klein, G_klein, path_klein_wa, "PH-Weighted A* on Klein Bottle")
+visualize_path(klein, G_klein, path_klein_gbfs, "PH-Greedy BFS on Klein Bottle")
 
 # Torus
-visualize_path(torus, G_torus, path_torus_a, "A* on Torus")
-visualize_path(torus, G_torus, path_torus_wa, "Weighted A* on Torus")
-visualize_path(torus, G_torus, path_torus_gbfs, "Greedy BFS on Torus")
+path_torus_astar = run_ph_search(torus, G_torus, start, goal, method="astar", alpha=0.1)
+path_torus_wa = run_ph_search(torus, G_torus, start, goal, method="weighted_astar", alpha=0.1, w=2.0)
+path_torus_gbfs = run_ph_search(torus, G_torus, start, goal, method="greedy_bfs", alpha=0.1)
+
+visualize_path(torus, G_torus, path_torus_astar, "PH-A* on Torus")
+visualize_path(torus, G_torus, path_torus_wa, "PH-Weighted A* on Torus")
+visualize_path(torus, G_torus, path_torus_gbfs, "PH-Greedy BFS on Torus")
 
 # Crosscap
-visualize_path(crosscap, G_crosscap, path_crosscap_a, "A* on Crosscap")
-visualize_path(crosscap, G_crosscap, path_crosscap_wa, "Weighted A* on Crosscap")
-visualize_path(crosscap, G_crosscap, path_crosscap_gbfs, "Greedy BFS on Crosscap")
+path_crosscap_astar = run_ph_search(crosscap, G_crosscap, start, goal, method="astar", alpha=0.1)
+path_crosscap_wa = run_ph_search(crosscap, G_crosscap, start, goal, method="weighted_astar", alpha=0.1, w=2.0)
+path_crosscap_gbfs = run_ph_search(crosscap, G_crosscap, start, goal, method="greedy_bfs", alpha=0.1)
 
+visualize_path(crosscap, G_crosscap, path_crosscap_astar, "PH-A* on Crosscap")
+visualize_path(crosscap, G_crosscap, path_crosscap_wa, "PH-Weighted A* on Crosscap")
+visualize_path(crosscap, G_crosscap, path_crosscap_gbfs, "PH-Greedy BFS on Crosscap")
 
 
 

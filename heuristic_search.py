@@ -14,14 +14,17 @@ def reconstruct_path(came_from, current):
     return path[::-1]
 
 
-def astar(G, points, start, goal):
+def astar(G, points, start, goal, heuristic_fn=None):
+    if heuristic_fn is None:
+        heuristic_fn = lambda u, v: np.linalg.norm(points[u] - points[v])
+
     open_set = [(0, start)]
     came_from = {}
     g_score = {node: float("inf") for node in G.nodes}
     g_score[start] = 0
 
     f_score = {node: float("inf") for node in G.nodes}
-    f_score[start] = euclidean_heuristic(start, goal, points)
+    f_score[start] = heuristic_fn(start, goal)
 
     while open_set:
         _, current = heapq.heappop(open_set)
@@ -33,12 +36,16 @@ def astar(G, points, start, goal):
             if tentative_g < g_score[neighbor]:
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative_g
-                f_score[neighbor] = tentative_g + euclidean_heuristic(neighbor, goal, points)
+                f_score[neighbor] = tentative_g + heuristic_fn(neighbor, goal)
                 heapq.heappush(open_set, (f_score[neighbor], neighbor))
     return None
 
 
-def weighted_astar(G, points, start, goal, w=1.5):
+
+def weighted_astar(G, points, start, goal, w=1.5, heuristic_fn=None):
+    if heuristic_fn is None:
+        heuristic_fn = lambda u, v: np.linalg.norm(points[u] - points[v])
+
     open_set = [(0, start)]
     came_from = {}
     g_score = {node: float("inf") for node in G.nodes}
@@ -54,12 +61,16 @@ def weighted_astar(G, points, start, goal, w=1.5):
             if tentative_g < g_score[neighbor]:
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative_g
-                f = tentative_g + w * euclidean_heuristic(neighbor, goal, points)
+                f = tentative_g + w * heuristic_fn(neighbor, goal)
                 heapq.heappush(open_set, (f, neighbor))
     return None
 
 
-def greedy_bfs(G, points, start, goal):
+
+def greedy_bfs(G, points, start, goal, heuristic_fn=None):
+    if heuristic_fn is None:
+        heuristic_fn = lambda u, v: np.linalg.norm(points[u] - points[v])
+
     open_set = [(0, start)]
     came_from = {}
     visited = set()
@@ -76,6 +87,7 @@ def greedy_bfs(G, points, start, goal):
         for neighbor in G.neighbors(current):
             if neighbor not in visited:
                 came_from[neighbor] = current
-                h = euclidean_heuristic(neighbor, goal, points)
+                h = heuristic_fn(neighbor, goal)
                 heapq.heappush(open_set, (h, neighbor))
     return None
+
