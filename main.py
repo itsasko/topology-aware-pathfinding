@@ -36,16 +36,16 @@ torus = torus_point_cloud(num_points=5000)
 # -----------------------------
 # Build k-NN graphs
 # -----------------------------
-G_sphere = build_knn_graph(sphere, k=8)
-G_torus = build_knn_graph(torus, k=8)
-G_klein = build_knn_graph(klein, k=8)
-G_crosscap = build_knn_graph(crosscap, k=8)
+G_sphere = build_knn_graph(sphere, k=4)
+G_torus = build_knn_graph(torus, k=4)
+G_klein = build_knn_graph(klein, k=4)
+G_crosscap = build_knn_graph(crosscap, k=4)
 
 # -----------------------------
 # Choose random start/goal pairs
 # -----------------------------
 # start_goal_indices = generate_start_goal_pairs(len(sphere), num_pairs=3, seed=42)
-start_goal_indices = [(10, 2500), (100, 4900)]
+start_goal_indices = [(10, 3900), (100, 4900)]
 
 for start, goal in start_goal_indices:
     print(f"\n=== Running experiments: start={start}, goal={goal} ===")
@@ -73,20 +73,20 @@ for start, goal in start_goal_indices:
     # PH-enhanced Searches
     # -----------------------------
     path_sphere_astar = run_ph_search(sphere, G_sphere, start, goal, method="astar", alpha=2.0)
-    path_sphere_wa = run_ph_search(sphere, G_sphere, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
-    path_sphere_gbfs = run_ph_search(sphere, G_sphere, start, goal, method="greedy_bfs", alpha=2.0)
+    #path_sphere_wa = run_ph_search(sphere, G_sphere, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
+    #path_sphere_gbfs = run_ph_search(sphere, G_sphere, start, goal, method="greedy_bfs", alpha=2.0)
 
     path_klein_astar = run_ph_search(klein, G_klein, start, goal, method="astar", alpha=2.0)
-    path_klein_wa_ph = run_ph_search(klein, G_klein, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
-    path_klein_gbfs_ph = run_ph_search(klein, G_klein, start, goal, method="greedy_bfs", alpha=2.0)
+    #path_klein_wa_ph = run_ph_search(klein, G_klein, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
+    #path_klein_gbfs_ph = run_ph_search(klein, G_klein, start, goal, method="greedy_bfs", alpha=2.0)
 
-    path_torus_astar = run_ph_search(torus, G_torus, start, goal, method="astar", alpha=2.0)
-    path_torus_wa_ph = run_ph_search(torus, G_torus, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
-    path_torus_gbfs_ph = run_ph_search(torus, G_torus, start, goal, method="greedy_bfs", alpha=2.0)
+    path_torus_astar = run_ph_search(torus, G_torus, start, goal, method="astar", alpha=5.0)
+    #path_torus_wa_ph = run_ph_search(torus, G_torus, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
+    #path_torus_gbfs_ph = run_ph_search(torus, G_torus, start, goal, method="greedy_bfs", alpha=2.0)
 
     path_crosscap_astar = run_ph_search(crosscap, G_crosscap, start, goal, method="astar", alpha=2.0)
-    path_crosscap_wa_ph = run_ph_search(crosscap, G_crosscap, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
-    path_crosscap_gbfs_ph = run_ph_search(crosscap, G_crosscap, start, goal, method="greedy_bfs", alpha=2.0)
+    #path_crosscap_wa_ph = run_ph_search(crosscap, G_crosscap, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
+    #path_crosscap_gbfs_ph = run_ph_search(crosscap, G_crosscap, start, goal, method="greedy_bfs", alpha=2.0)
 
     # -----------------------------
     # Pairwise Comparisons
@@ -95,23 +95,23 @@ for start, goal in start_goal_indices:
 
     # Sphere
     compare_pairwise_paths(sphere, G_sphere, path_a, path_sphere_astar, "A* on Sphere")
-    compare_pairwise_paths(sphere, G_sphere, path_wa, path_sphere_wa, "Weighted A* on Sphere")
-    compare_pairwise_paths(sphere, G_sphere, path_gbfs, path_sphere_gbfs, "Greedy BFS on Sphere")
+    #compare_pairwise_paths(sphere, G_sphere, path_wa, path_sphere_wa, "Weighted A* on Sphere")
+    #compare_pairwise_paths(sphere, G_sphere, path_gbfs, path_sphere_gbfs, "Greedy BFS on Sphere")
 
     # Klein Bottle
     compare_pairwise_paths(klein, G_klein, path_klein_a, path_klein_astar, "A* on Klein Bottle")
-    compare_pairwise_paths(klein, G_klein, path_klein_wa, path_klein_wa_ph, "Weighted A* on Klein Bottle")
-    compare_pairwise_paths(klein, G_klein, path_klein_gbfs, path_klein_gbfs_ph, "Greedy BFS on Klein Bottle")
+    #compare_pairwise_paths(klein, G_klein, path_klein_wa, path_klein_wa_ph, "Weighted A* on Klein Bottle")
+    #compare_pairwise_paths(klein, G_klein, path_klein_gbfs, path_klein_gbfs_ph, "Greedy BFS on Klein Bottle")
 
     # Torus
     compare_pairwise_paths(torus, G_torus, path_torus_a, path_torus_astar, "A* on Torus")
-    compare_pairwise_paths(torus, G_torus, path_torus_wa, path_torus_wa_ph, "Weighted A* on Torus")
-    compare_pairwise_paths(torus, G_torus, path_torus_gbfs, path_torus_gbfs_ph, "Greedy BFS on Torus")
+    #compare_pairwise_paths(torus, G_torus, path_torus_wa, path_torus_wa_ph, "Weighted A* on Torus")
+    #compare_pairwise_paths(torus, G_torus, path_torus_gbfs, path_torus_gbfs_ph, "Greedy BFS on Torus")
 
     # Crosscap
     compare_pairwise_paths(crosscap, G_crosscap, path_crosscap_a, path_crosscap_astar, "A* on Crosscap")
-    compare_pairwise_paths(crosscap, G_crosscap, path_crosscap_wa, path_crosscap_wa_ph, "Weighted A* on Crosscap")
-    compare_pairwise_paths(crosscap, G_crosscap, path_crosscap_gbfs, path_crosscap_gbfs_ph, "Greedy BFS on Crosscap")
+    #compare_pairwise_paths(crosscap, G_crosscap, path_crosscap_wa, path_crosscap_wa_ph, "Weighted A* on Crosscap")
+    #compare_pairwise_paths(crosscap, G_crosscap, path_crosscap_gbfs, path_crosscap_gbfs_ph, "Greedy BFS on Crosscap")
 
 
 

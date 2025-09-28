@@ -1,7 +1,8 @@
 import numpy as np
-import gudhi as gd
-from typing import Tuple, Set, Dict, List, Iterable, Optional
+from ripser import ripser
+from typing import Tuple, Set, Dict, List, Optional
 from heuristic_search import astar, weighted_astar, greedy_bfs
+from scipy.spatial import cKDTree
 
 # ----------------------------
 # Utilities
@@ -13,7 +14,6 @@ class UnionFind:
         self.rank = np.zeros(n, dtype=int)
 
     def find(self, x: int) -> int:
-        # path compression
         p = x
         while self.parent[p] != p:
             p = self.parent[p]
@@ -29,7 +29,6 @@ class UnionFind:
         ra, rb = self.find(a), self.find(b)
         if ra == rb:
             return
-        # union by rank
         if self.rank[ra] < self.rank[rb]:
             self.parent[ra] = rb
         elif self.rank[rb] < self.rank[ra]:
@@ -45,102 +44,94 @@ class UnionFind:
             comp.setdefault(r, []).append(i)
         return comp
 
+
 # ----------------------------
 # PH Preprocessing Functions
 # ----------------------------
 
 def pairwise_distances(points: np.ndarray) -> np.ndarray:
-    """
-    Efficient pairwise distances matrix (NxN).
-    """
     diff = points[:, None, :] - points[None, :, :]
     return np.linalg.norm(diff, axis=2)
 
 
-def compute_rips_complex(points: np.ndarray,
-                         max_edge_length: Optional[float] = None,
-                         max_dim: int = 1,
-                         percentile: float = 90.0) -> Tuple[gd.SimplexTree, float]:
-    """
-    Build Rips complex and return simplex tree plus used max_edge_length.
-    If max_edge_length is None, use the given percentile of pairwise distances
-    (default 90th) to avoid outlier-driven scales.
-    Returns (simplex_tree, used_max_edge_length).
-    """
-    n = len(points)
-    if n == 0:
-        raise ValueError("Empty point cloud")
-
-    dists = pairwise_distances(points)
-    if max_edge_length is None:
-        # use upper-triangle distances only (exclude zeros on diagonal)
-        iu = np.triu_indices(n, k=1)
-        nonzero = dists[iu]
-        if nonzero.size == 0:
-            used = 0.0
-        else:
-            used = float(np.percentile(nonzero, percentile))
-    else:
-        used = float(max_edge_length)
-
-    # if used == 0 (all points identical or single point), keep a tiny epsilon
-    if used == 0.0:
-        used = np.finfo(float).eps
-
-    rips = gd.RipsComplex(points=points, max_edge_length=used)
-    st = rips.create_simplex_tree(max_dimension=max_dim)
-    st.persistence()  # compute persistence for later queries
-    return st, used
-
-
-def extract_H0_H1(st: gd.SimplexTree,
+def extract_H0_H1(points: np.ndarray,
                   persistence_threshold: float = 1e-3,
-                  max_cycles: int = 3) -> Tuple[List[Set[int]], Dict[int, float]]:
+                  max_cycles: int = 3,
+                  max_edge_length: Optional[float] = None,
+                  downsample_size: int = 500) -> Tuple[List[Set[int]], Dict[int, float]]:
     """
-    Extract H0 components and H1 node weights using actual persistence generators.
+    Extract H0 components and H1 node weights using Ripser.
+    Automatically downsamples large point clouds for efficiency.
     """
-    n_vertices = len([v for v in st.get_skeleton(0)])
+
+    n_vertices = len(points)
     if n_vertices == 0:
         return [], {}
 
-    # Build H0 via union-find
+    # --- Downsample for PH ---
+    if n_vertices > downsample_size:
+        idx_ds = np.random.choice(n_vertices, downsample_size, replace=False)
+        points_ds = points[idx_ds]
+    else:
+        points_ds = points
+        idx_ds = np.arange(n_vertices)
+
+    # --- Determine max_edge_length if needed ---
+    if max_edge_length is None:
+        dists = pairwise_distances(points_ds)
+        iu = np.triu_indices(len(points_ds), k=1)
+        nonzero = dists[iu]
+        max_edge_length = float(np.percentile(nonzero, 90)) if nonzero.size > 0 else np.finfo(float).eps
+
+    # --- H0 components via threshold ---
     uf = UnionFind(n_vertices)
-    for simplex, _ in st.get_skeleton(1):
-        if len(simplex) == 2:
-            uf.union(simplex[0], simplex[1])
+    dists_full = pairwise_distances(points)
+    for i in range(n_vertices):
+        for j in range(i + 1, n_vertices):
+            if dists_full[i, j] <= max_edge_length:
+                uf.union(i, j)
     H0_components = [set(members) for members in uf.components().values()]
 
-    # Enable persistence generators
-    st.flag_persistence_generators()
-    intervals = st.persistence_intervals_in_dimension(1)
-    if len(intervals) == 0:
-        return H0_components, {}
-
-    # Top persistent 1-cycles
-    top_intervals = sorted(intervals, key=lambda iv: iv[1] - iv[0], reverse=True)[:max_cycles]
+    # --- H1 via Ripser on downsampled points ---
+    result = ripser(points_ds, maxdim=1, coeff=2, do_cocycles=True)
+    diagrams = result['dgms']
+    cocycles = result.get('cocycles', [])
 
     H1_node_weights: Dict[int, float] = {}
-    for gen_simplex, dim, birth, death in st.persistence_generators():
-        if dim != 1:
-            continue
-        for iv in top_intervals:
-            # Match generator to interval
-            if abs(iv[0]-birth) < 1e-6 and abs(iv[1]-death) < 1e-6:
-                for v in gen_simplex:
-                    H1_node_weights[v] = death - birth  # persistence as weight
+
+    if len(diagrams[1]) > 0:
+        persistence_values = diagrams[1][:, 1] - diagrams[1][:, 0]
+        top_indices = np.argsort(-persistence_values)[:max_cycles]
+
+        valid_indices = [idx for idx in top_indices if persistence_values[idx] > persistence_threshold]
+        if valid_indices:
+            max_p = max(persistence_values[valid_indices])
+        else:
+            valid_indices = []
+            max_p = 0.0
+
+        # Map back to full points using nearest neighbor
+        tree = cKDTree(points)
+        for idx in valid_indices:
+            if idx < len(cocycles) and cocycles[idx] is not None:
+                cycle_vertices = np.array(cocycles[idx])
+                for v_ds in cycle_vertices:
+                    # Find nearest full point
+                    nn_idx = tree.query(points_ds[v_ds])[1]
+                    H1_node_weights[nn_idx] = max_p
+            else:
+                # Fallback: assign to all points
+                for v in range(n_vertices):
+                    H1_node_weights[v] = max_p
 
     return H0_components, H1_node_weights
-
 
 
 # ----------------------------
 # PH-Enhanced Search Wrappers
 # ----------------------------
 
-def check_H0_connectivity(start: int, goal: int, H0_components: Iterable[Set[int]]) -> bool:
-    """
-    Check if start and goal are in the same connected component.
-    """
+def check_H0_connectivity(start: int, goal: int, H0_components: List[Set[int]]) -> bool:
     for comp in H0_components:
         if start in comp and goal in comp:
             return True
@@ -151,14 +142,6 @@ def make_topology_aware_heuristic(points: np.ndarray,
                                   H1_node_weights: Dict[int, float],
                                   alpha: float = 1.0,
                                   weight_fn: Optional[callable] = None):
-    """
-    Returns a heuristic function(h(node_idx, goal_idx)) that adds a topology penalty.
-    - H1_node_weights: raw persistence values per node (may be empty).
-    - alpha: global multiplier for topology penalty.
-    - weight_fn: optional function to map raw persistence -> [0,1] penalty factor.
-                 default: linear normalization by max persistence (or identity if max==0).
-    """
-
     if H1_node_weights:
         max_p = max(H1_node_weights.values())
     else:
@@ -191,18 +174,20 @@ def run_ph_search(points: np.ndarray,
                   max_edge_length: Optional[float] = None,
                   persistence_threshold: float = 1e-3,
                   max_cycles: int = 3,
-                  rips_percentile: float = 90.0):
+                  rips_percentile: float = 90.0,
+                  downsample_size: int = 500):
     """
-    Main wrapper:
-      - builds Rips complex (auto scale via percentile if max_edge_length is None)
-      - extracts H0 components and H1 node weights
-      - checks H0 connectivity
-      - constructs topology-aware heuristic and runs selected search
-    Parameters align with previous API; added rips_percentile to control auto-scale selection.
+    PH-enhanced search:
+      - downsamples large clouds
+      - computes H0/H1 safely
+      - applies topology-aware heuristic
     """
-    st, used_max = compute_rips_complex(points, max_edge_length=max_edge_length,
-                                        max_dim=1, percentile=rips_percentile)
-    H0, H1_node_weights = extract_H0_H1(st, persistence_threshold=persistence_threshold, max_cycles=max_cycles)
+
+    H0, H1_node_weights = extract_H0_H1(points,
+                                        persistence_threshold=persistence_threshold,
+                                        max_cycles=max_cycles,
+                                        max_edge_length=max_edge_length,
+                                        downsample_size=downsample_size)
 
     if not check_H0_connectivity(start, goal, H0):
         print("Start and goal are disconnected according to H0.")
