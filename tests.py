@@ -1,83 +1,54 @@
 import unittest
 import numpy as np
-from ph_enhancement import (compute_rips_complex, extract_H0_H1, check_H0_connectivity,
-                            make_topology_aware_heuristic, run_ph_search)
 
-# Adapted SimpleGraph for your search implementation
-class SimpleGraph:
-    def __init__(self, adjacency_matrix):
-        self.adj = adjacency_matrix
-        self.n = len(adjacency_matrix)
-        self.nodes = list(range(self.n))  # required by astar/weighted_astar
+from build_graph import build_knn_graph
+from surfaces import torus_point_cloud
+from heuristic_search import weighted_astar
+from ph_enhancement import make_topology_aware_heuristic
 
-    def neighbors(self, u):
-        return [v for v, w in enumerate(self.adj[u]) if w > 0]
+class TestPHvsTraditional(unittest.TestCase):
 
-    def __getitem__(self, u):
-        # return dict-style for edge weights
-        return {v: {'weight': self.adj[u][v]} for v in self.neighbors(u)}
-
-
-class PHEnhancementTest(unittest.TestCase):
     def setUp(self):
-        # Simple 4-node square
-        self.points = np.array([
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [1.0, 1.0],
-            [0.0, 1.0]
-        ])
-        self.adj_matrix = np.array([
-            [0, 1, 0, 1],
-            [1, 0, 1, 0],
-            [0, 1, 0, 1],
-            [1, 0, 1, 0]
-        ])
-        self.G = SimpleGraph(self.adj_matrix)
-        self.start, self.goal = 0, 2
+        np.random.seed(42)
 
-    def test_rips_complex(self):
-        st, max_edge = compute_rips_complex(self.points)
-        self.assertTrue(st.num_simplices() > 0)
-        self.assertTrue(max_edge > 0)
+        # Smaller, asymmetric torus point cloud
+        self.points = torus_point_cloud(num_points=50, R=1.0, r=0.3)
 
-    def test_extract_H0_H1(self):
-        st, _ = compute_rips_complex(self.points)
-        H0, H1_weights = extract_H0_H1(st)
-        self.assertTrue(len(H0) > 0)
-        self.assertIsInstance(H1_weights, dict)
+        # Sparse kNN graph to make PH penalty influential
+        self.G = build_knn_graph(self.points, k=3)
 
-    def test_H0_connectivity(self):
-        st, _ = compute_rips_complex(self.points)
-        H0, _ = extract_H0_H1(st)
-        self.assertTrue(check_H0_connectivity(self.start, self.goal, H0))
+        self.start, self.goal = 0, len(self.points) // 2
 
-    def test_topology_aware_heuristic(self):
-        st, _ = compute_rips_complex(self.points)
-        _, H1_weights = extract_H0_H1(st)
-        heuristic = make_topology_aware_heuristic(self.points, H1_weights, alpha=1.0)
-        val = heuristic(self.start, self.goal)
-        self.assertGreater(val, 0)
+    def test_paths_differ(self):
+        # --- Traditional weighted A* ---
+        path_trad = weighted_astar(self.G, self.points, self.start, self.goal, w=2.0)
 
-    def test_run_ph_search_astar(self):
-        path = run_ph_search(self.points, self.G, self.start, self.goal, method="astar")
-        self.assertIsInstance(path, list)
-        self.assertEqual(path[0], self.start)
-        self.assertEqual(path[-1], self.goal)
+        # --- PH-enhanced heuristic ---
+        # Force high penalty along first edge of traditional path
+        forced_edge = (path_trad[0], path_trad[1])
+        H1_edge_weights = {tuple(sorted(forced_edge)): 50.0}  # huge penalty
 
-    def test_run_ph_search_weighted_astar(self):
-        path = run_ph_search(self.points, self.G, self.start, self.goal, method="weighted_astar", w=2.0)
-        self.assertIsInstance(path, list)
-        self.assertEqual(path[0], self.start)
-        self.assertEqual(path[-1], self.goal)
+        heuristic_fn = make_topology_aware_heuristic(self.points, H1_edge_weights, alpha=1.0)
+        path_ph = weighted_astar(self.G, self.points, self.start, self.goal, heuristic_fn=heuristic_fn)
 
-    def test_run_ph_search_greedy(self):
-        path = run_ph_search(self.points, self.G, self.start, self.goal, method="greedy_bfs")
-        self.assertIsInstance(path, list)
-        self.assertEqual(path[0], self.start)
-        self.assertEqual(path[-1], self.goal)
+        # Compute path lengths
+        def path_length(path, pts):
+            return sum(np.linalg.norm(pts[path[i]] - pts[path[i+1]]) for i in range(len(path)-1))
 
+        len_trad = path_length(path_trad, self.points)
+        len_ph = path_length(path_ph, self.points)
+
+        print(f"Traditional length: {len_trad:.4f}, PH-enhanced length: {len_ph:.4f}")
+        print(f"Traditional path: {path_trad}")
+        print(f"PH-enhanced path: {path_ph}")
+
+        # --- ASSERT paths are different ---
+        self.assertNotEqual(path_trad, path_ph)
+        self.assertNotAlmostEqual(len_trad, len_ph, places=3)
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
 

@@ -17,8 +17,8 @@ def generate_start_goal_pairs(num_points, num_pairs=3, seed=None):
         random.seed(seed)
     pairs = []
     for _ in range(num_pairs):
-        start = random.randint(0, num_points - 1)
-        goal = random.randint(0, num_points - 1)
+        start = random.randint(0, num_points / 2)
+        goal = random.randint(num_points / 2, num_points - 1)
         while goal == start:
             goal = random.randint(0, num_points - 1)
         pairs.append((start, goal))
@@ -36,16 +36,16 @@ torus = torus_point_cloud(num_points=5000)
 # -----------------------------
 # Build k-NN graphs
 # -----------------------------
-G_sphere = build_knn_graph(sphere, k=4)
-G_torus = build_knn_graph(torus, k=4)
-G_klein = build_knn_graph(klein, k=4)
-G_crosscap = build_knn_graph(crosscap, k=4)
+G_sphere = build_knn_graph(sphere, k=3)
+G_torus = build_knn_graph(torus, k=3)
+G_klein = build_knn_graph(klein, k=3)
+G_crosscap = build_knn_graph(crosscap, k=3)
 
 # -----------------------------
 # Choose random start/goal pairs
 # -----------------------------
-# start_goal_indices = generate_start_goal_pairs(len(sphere), num_pairs=3, seed=42)
-start_goal_indices = [(10, 3900), (100, 4900)]
+start_goal_indices = generate_start_goal_pairs(len(sphere), num_pairs=3, seed=42)
+# start_goal_indices = [(10, 3900), (100, 4900)]
 
 for start, goal in start_goal_indices:
     print(f"\n=== Running experiments: start={start}, goal={goal} ===")
@@ -72,19 +72,19 @@ for start, goal in start_goal_indices:
     # -----------------------------
     # PH-enhanced Searches
     # -----------------------------
-    path_sphere_astar = run_ph_search(sphere, G_sphere, start, goal, method="astar", alpha=2.0)
+    path_sphere_astar = run_ph_search(sphere, G_sphere, start, goal, method="astar", alpha=20.0)
     #path_sphere_wa = run_ph_search(sphere, G_sphere, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
     #path_sphere_gbfs = run_ph_search(sphere, G_sphere, start, goal, method="greedy_bfs", alpha=2.0)
 
-    path_klein_astar = run_ph_search(klein, G_klein, start, goal, method="astar", alpha=2.0)
+    path_klein_astar = run_ph_search(klein, G_klein, start, goal, method="astar", alpha=20.0)
     #path_klein_wa_ph = run_ph_search(klein, G_klein, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
     #path_klein_gbfs_ph = run_ph_search(klein, G_klein, start, goal, method="greedy_bfs", alpha=2.0)
 
-    path_torus_astar = run_ph_search(torus, G_torus, start, goal, method="astar", alpha=5.0)
+    path_torus_astar = run_ph_search(torus, G_torus, start, goal, method="astar", alpha=20.0)
     #path_torus_wa_ph = run_ph_search(torus, G_torus, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
     #path_torus_gbfs_ph = run_ph_search(torus, G_torus, start, goal, method="greedy_bfs", alpha=2.0)
 
-    path_crosscap_astar = run_ph_search(crosscap, G_crosscap, start, goal, method="astar", alpha=2.0)
+    path_crosscap_astar = run_ph_search(crosscap, G_crosscap, start, goal, method="astar", alpha=20.0)
     #path_crosscap_wa_ph = run_ph_search(crosscap, G_crosscap, start, goal, method="weighted_astar", alpha=2.0, w=2.0)
     #path_crosscap_gbfs_ph = run_ph_search(crosscap, G_crosscap, start, goal, method="greedy_bfs", alpha=2.0)
 

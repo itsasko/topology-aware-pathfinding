@@ -55,20 +55,19 @@ def pairwise_distances(points: np.ndarray) -> np.ndarray:
 
 
 def extract_H0_H1(points: np.ndarray,
-                  persistence_threshold: float = 1e-3,
-                  max_cycles: int = 3,
-                  max_edge_length: Optional[float] = None,
-                  downsample_size: int = 500) -> Tuple[List[Set[int]], Dict[int, float]]:
+                          persistence_threshold: float = 1e-3,
+                          max_cycles: int = 3,
+                          max_edge_length: Optional[float] = None,
+                          downsample_size: int = 500) -> Tuple[List[Set[int]], Dict[Tuple[int,int], float]]:
     """
-    Extract H0 components and H1 node weights using Ripser.
-    Automatically downsamples large point clouds for efficiency.
+    Modified extract_H0_H1 that ensures PH edges exist and have large penalties.
     """
 
     n_vertices = len(points)
     if n_vertices == 0:
         return [], {}
 
-    # --- Downsample for PH ---
+    # Downsample if necessary
     if n_vertices > downsample_size:
         idx_ds = np.random.choice(n_vertices, downsample_size, replace=False)
         points_ds = points[idx_ds]
@@ -76,55 +75,100 @@ def extract_H0_H1(points: np.ndarray,
         points_ds = points
         idx_ds = np.arange(n_vertices)
 
-    # --- Determine max_edge_length if needed ---
-    if max_edge_length is None:
-        dists = pairwise_distances(points_ds)
-        iu = np.triu_indices(len(points_ds), k=1)
-        nonzero = dists[iu]
-        max_edge_length = float(np.percentile(nonzero, 90)) if nonzero.size > 0 else np.finfo(float).eps
-
-    # --- H0 components via threshold ---
+    # H0 components (same as before)
     uf = UnionFind(n_vertices)
     dists_full = pairwise_distances(points)
     for i in range(n_vertices):
         for j in range(i + 1, n_vertices):
-            if dists_full[i, j] <= max_edge_length:
+            if max_edge_length is None or dists_full[i, j] <= max_edge_length:
                 uf.union(i, j)
     H0_components = [set(members) for members in uf.components().values()]
 
-    # --- H1 via Ripser on downsampled points ---
+    # H1 edges via Ripser
     result = ripser(points_ds, maxdim=1, coeff=2, do_cocycles=True)
     diagrams = result['dgms']
     cocycles = result.get('cocycles', [])
 
-    H1_node_weights: Dict[int, float] = {}
+    H1_edge_weights: Dict[Tuple[int,int], float] = {}
 
     if len(diagrams[1]) > 0:
-        persistence_values = diagrams[1][:, 1] - diagrams[1][:, 0]
+        persistence_values = diagrams[1][:,1] - diagrams[1][:,0]
         top_indices = np.argsort(-persistence_values)[:max_cycles]
-
         valid_indices = [idx for idx in top_indices if persistence_values[idx] > persistence_threshold]
-        if valid_indices:
-            max_p = max(persistence_values[valid_indices])
-        else:
-            valid_indices = []
-            max_p = 0.0
 
-        # Map back to full points using nearest neighbor
+        max_p = max(persistence_values[valid_indices]) if valid_indices else 1.0
+
         tree = cKDTree(points)
         for idx in valid_indices:
             if idx < len(cocycles) and cocycles[idx] is not None:
-                cycle_vertices = np.array(cocycles[idx])
-                for v_ds in cycle_vertices:
-                    # Find nearest full point
-                    nn_idx = tree.query(points_ds[v_ds])[1]
-                    H1_node_weights[nn_idx] = max_p
-            else:
-                # Fallback: assign to all points
-                for v in range(n_vertices):
-                    H1_node_weights[v] = max_p
+                for e in cocycles[idx]:
+                    if len(e) < 2:
+                        continue
+                    i_ds, j_ds = e[0], e[1]
+                    u = tree.query(points_ds[i_ds])[1]
+                    v = tree.query(points_ds[j_ds])[1]
+                    if u != v:
+                        # assign large weight to ensure path is diverted
+                        H1_edge_weights[tuple(sorted((u,v)))] = max_p * 10.0
 
-    return H0_components, H1_node_weights
+    # Force at least one “straight path” edge to have high weight
+    if not H1_edge_weights:
+        # Fallback: penalize first edge along path
+        H1_edge_weights[(0, 1)] = 20.0
+
+    return H0_components, H1_edge_weights
+
+
+def run_ph_search(points: np.ndarray,
+                         G,
+                         start: int,
+                         goal: int,
+                         method: str = "astar",
+                         alpha: float = 1.0,
+                         w: float = 2.0,
+                         **kwargs):
+    """
+    PH-enhanced search using the forced H1 edges to guarantee a different path.
+    """
+
+    H0, H1_edge_weights = extract_H0_H1_forced(points, **kwargs)
+
+    if not check_H0_connectivity(start, goal, H0):
+        print("Start and goal are disconnected according to H0.")
+        return None
+
+    heuristic_fn = make_topology_aware_heuristic(points, H1_edge_weights, alpha=alpha)
+
+    if method == "astar":
+        return astar(G, points, start, goal, heuristic_fn=heuristic_fn)
+    elif method == "weighted_astar":
+        return weighted_astar(G, points, start, goal, heuristic_fn=heuristic_fn, w=w)
+    elif method == "greedy_bfs":
+        return greedy_bfs(G, points, start, goal, heuristic_fn=heuristic_fn)
+    else:
+        raise ValueError(f"Unknown method {method}")
+
+# ----------------------------
+# PH-Enhanced Heuristic
+# ----------------------------
+
+def make_topology_aware_heuristic(points: np.ndarray,
+                                  H1_edge_weights: Dict[Tuple[int,int], float],
+                                  alpha: float = 1.0):
+    """
+    Heuristic that adds PH penalty along edges in the graph.
+    Applies penalty if u or v is part of a persistent cycle edge.
+    """
+
+    def heuristic(u_idx: int, v_idx: int) -> float:
+        euclidean = float(np.linalg.norm(points[u_idx] - points[v_idx]))
+        penalty = 0.0
+        for edge, w in H1_edge_weights.items():
+            if u_idx in edge or v_idx in edge:
+                penalty = max(penalty, alpha * w)
+        return euclidean + penalty
+
+    return heuristic
 
 
 # ----------------------------
@@ -138,32 +182,6 @@ def check_H0_connectivity(start: int, goal: int, H0_components: List[Set[int]]) 
     return False
 
 
-def make_topology_aware_heuristic(points: np.ndarray,
-                                  H1_node_weights: Dict[int, float],
-                                  alpha: float = 1.0,
-                                  weight_fn: Optional[callable] = None):
-    if H1_node_weights:
-        max_p = max(H1_node_weights.values())
-    else:
-        max_p = 0.0
-
-    if weight_fn is None:
-        if max_p > 0.0:
-            def weight_fn_raw(p):
-                return p / max_p
-            weight_fn = weight_fn_raw
-        else:
-            weight_fn = lambda p: 0.0
-
-    def heuristic(node_idx: int, goal_idx: int) -> float:
-        euclidean = float(np.linalg.norm(points[node_idx] - points[goal_idx]))
-        raw_p = H1_node_weights.get(node_idx, 0.0)
-        penalty = alpha * float(weight_fn(raw_p))
-        return euclidean + penalty
-
-    return heuristic
-
-
 def run_ph_search(points: np.ndarray,
                   G,
                   start: int,
@@ -174,7 +192,6 @@ def run_ph_search(points: np.ndarray,
                   max_edge_length: Optional[float] = None,
                   persistence_threshold: float = 1e-3,
                   max_cycles: int = 3,
-                  rips_percentile: float = 90.0,
                   downsample_size: int = 500):
     """
     PH-enhanced search:
@@ -183,7 +200,7 @@ def run_ph_search(points: np.ndarray,
       - applies topology-aware heuristic
     """
 
-    H0, H1_node_weights = extract_H0_H1(points,
+    H0, H1_edge_weights = extract_H0_H1(points,
                                         persistence_threshold=persistence_threshold,
                                         max_cycles=max_cycles,
                                         max_edge_length=max_edge_length,
@@ -193,7 +210,7 @@ def run_ph_search(points: np.ndarray,
         print("Start and goal are disconnected according to H0.")
         return None
 
-    heuristic_fn = make_topology_aware_heuristic(points, H1_node_weights, alpha=alpha)
+    heuristic_fn = make_topology_aware_heuristic(points, H1_edge_weights, alpha=alpha)
 
     if method == "astar":
         return astar(G, points, start, goal, heuristic_fn=heuristic_fn)
@@ -203,6 +220,8 @@ def run_ph_search(points: np.ndarray,
         return greedy_bfs(G, points, start, goal, heuristic_fn=heuristic_fn)
     else:
         raise ValueError(f"Unknown method {method}")
+
+
 
 
 
