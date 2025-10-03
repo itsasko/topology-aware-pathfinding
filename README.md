@@ -6,6 +6,7 @@
 **Student ID:** 411839  
 **Degree:** Bachelor  
 **University:** University of Lodz
+
 **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)  
 
 ---
